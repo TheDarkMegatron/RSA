@@ -1,0 +1,344 @@
+import random
+import os.path
+
+
+# для генерации параметров ключей
+def rsa(p, q):
+    n = p * q
+    f_n = (p - 1) * (q - 1)
+    e = exp(f_n)
+    m, a, b = num_d(f_n, e)
+    if b < 0:
+        b += f_n
+    if m == 1:
+        d = b
+    else:
+        print('Экспонента не подошла')
+        return rsa(p, q)
+    print('Генерация ключей закончена.', end='')
+    return (n, e), (p, q, d)
+
+
+# выбор открытой экспоненты
+def exp(f_n):
+    num_f = (3, 5, 17, 257, 65537)
+    position = 1
+    print('Выберете открытую экспоненту:')
+    for i in range(5):
+        if num_f[i] < f_n:
+            print(str(i + 1) + '. ' + str(num_f[i]), end='  ')
+        else:
+            break
+        position = i + 1
+    print()
+
+    count = int(input())
+    if 0 < count <= position:
+        return num_f[count - 1]
+    else:
+        print('Экспоненты нет из предложенных')
+        return exp(f_n)
+
+
+# Для вычисления закрытой экспоненты d, алгоритм Евклида
+def num_d(x, y):
+    x_ = x
+    y_ = y
+    a2 = 1
+    a1 = 0
+    b2 = 0
+    b1 = 1
+    while y_ != 0:
+        q = x_ // y_
+        r = x_ - q * y_
+        a = a2 - q * a1
+        b = b2 - q * b1
+        x_ = y_
+        y_ = r
+        a2 = a1
+        a1 = a
+        b2 = b1
+        b1 = b
+    m = x_
+    a = a2
+    b = b2
+    return m, a, b
+
+
+# Быстрое возведение в степень
+def degree(num, count):
+    result = 1
+    while count > 0:
+        if count % 2 == 1:
+            result *= num
+        num *= num
+        count //= 2
+    return result
+
+
+# Быстрое возведение в степень по модулю слева направо
+def degree_module(a, e, m):
+    r = 1
+    while e != 0:
+        if e % 2 == 1:
+            r = r * a % m
+        e //= 2
+        a = a * a % m
+    return r
+
+
+# для генерации чисел простых p и q
+def generation_num(k, t):
+    # генерация случайного б-го числа
+    p = [0] * k
+    for i in range(k):
+        p[i] = int(round(random.random()))
+
+    # положить единицы в начало и конец
+    if p[0] == 0:
+        p[0] = 1
+    if p[k - 1] == 0:
+        p[k - 1] = 1
+
+    # перевод из двоичной в десятичную систему
+    p_ = 0
+    for i in range(k - 1, -1, -1):
+        if p[i] == 1:
+            p_ += degree(2, i)
+
+    # проводится тест Миллера-Рабина
+    n = p_ - 1
+    s = 0
+    while n % 2 == 0:
+        n //= 2
+        s += 1
+
+    for i in range(t):
+        a = random.randint(1, p_ - 2)
+        x = degree_module(a, n, p_)
+        if x == 1 or x == p_ - 1:
+            continue
+        for j in range(s - 1):
+            x = degree_module(x, 2, p_)
+            if x == 1:
+                return generation_num(k, t)
+            if x == p_ - 1:
+                break
+        if x == p_ - 1:
+            continue
+        return generation_num(k, t)
+    return p_
+
+
+def fileFound(name):
+    if name == '':
+        print('Файл с пустым именем')
+        return True
+    if os.path.isfile(name):
+        print('Файл с таким именем уже существует')
+        return True
+    return False
+
+
+# для записи закрытого и открытого ключа
+def write_pub_key(pub_key):
+    print('Название файла для открытого ключа: ', end='')
+    name = input()
+    if fileFound(name):
+        write_pub_key(pub_key)
+    else:
+        file = open(name, 'w')
+        file.write('RSAPublicKey ::= SEQUENCE {\n')
+        file.write('            modulus             INTEGER, -- ' + str(pub_key[0]) + '\n')
+        file.write('            publicExponent      INTEGER, -- ' + str(pub_key[1]) + '\n')
+        file.write('    }')
+        file.close()
+
+
+def write_pri_key(pub_key, pri_key):
+    print('Название файла для закрытого ключа: ', end='')
+    nameFile = input()
+    if fileFound(nameFile):
+        write_pri_key(pub_key, pri_key)
+    else:
+        file = open(nameFile, 'w')
+        file.write('RSAPrivateKey ::= SEQUENCE {\n')
+        file.write('            modulus             INTEGER, -- ' + str(pub_key[0]) + '\n')
+        file.write('            publicExponent      INTEGER, -- ' + str(pub_key[1]) + '\n')
+        file.write('            privateExponent     INTEGER, -- ' + str(pri_key[2]) + '\n')
+        file.write('            prime1              INTEGER, -- ' + str(pri_key[0]) + '\n')
+        file.write('            prime2              INTEGER, -- ' + str(pri_key[1]) + '\n')
+        file.write('    }')
+        file.close()
+
+
+# для зашифрования сообщения
+def encryption(s, n, e):
+    s = s.lower()
+    s = [str(degree_module(ord(c), e, n)) for c in s]
+
+    for i in range(len(s)):
+        if len(str(n)) > len(s[i]):
+            for j in range(len(str(n)) - len(s[i])):
+                s[i] = '0' + s[i]
+    return ''.join(s)
+
+
+# для расшифрования сообщения
+def decryption(s, n, d):
+    def grouper(iterable, u):
+        args = [iter(iterable)] * u
+        return zip(*args)
+
+    s = [''.join(i) for i in grouper(s, len(str(n)))]
+    s = [int(degree_module(int(c), d, n)) for c in s]
+
+    s = [chr(c) for c in s]
+    return ''.join(s)
+
+
+# для файла с зашифрованным сообщением
+def write_text(text):
+    print('Название зашифрованного сообщения: ', end='')
+    nameFile = input()
+    if fileFound(nameFile):
+        write_text(text)
+    file = open(nameFile, 'w')
+    file.write('EncryptedData :: = SEQUENCE {\n')
+    file.write('            contentType                             text\n')
+    file.write('            contentEncryptionAlgorithmIdentifier    rsaEncryption\n')
+    file.write('            encryptedContent                        ' + text + '\n')
+    file.write('    }')
+    file.close()
+
+
+# загрузка открытого ключа
+def load_open_key():
+    print('Файл с открытым ключом: ', end='')
+    nameFile = input()
+    f = open(nameFile, 'r')
+    text = []
+    for line in f:
+        text.append(line)
+    f.close()
+
+    n = int(text[1][44:].strip())
+    e = int(text[2][44:].strip())
+    return (n, e)
+
+
+# загрузка закрытого ключа
+def load_close_key():
+    print('Файл с закрытым ключом: ', end='')
+    nameFile = input()
+    f = open(nameFile, 'r')
+    text = []
+    for line in f:
+        text.append(line)
+    f.close()
+
+    n = int(text[1][44:].strip())
+    e = int(text[2][44:].strip())
+    d = int(text[3][44:].strip())
+    p = int(text[4][44:].strip())
+    q = int(text[5][44:].strip())
+    return (n, e), (p, q, d)
+
+
+# главная функция запуска программы
+def main():
+    name = ''
+    pub_key = []
+    pri_key = []
+    arg = 0
+
+    print('1 Сгенерировать свой ключ, 2 Зашифровать сообщение, 3 Расшифровать сообщение, 4 Завершение программы: ',
+          end='')
+    try:
+        arg = int(input())
+    except ValueError:
+        main()
+
+    if arg == 1:
+        try:
+            print('Размер первого числа (>=4): ', end='')
+            s = int(input())
+            if s < 4:
+                print('Размер числа меньше 16 бит')
+                return main()
+            else:
+                p = generation_num(2 ** s, 3)
+
+            print('Размер второго числа (>=4): ', end='')
+            s = int(input())
+            if s < 4:
+                print('Размер числа меньше 16 бит')
+                return main()
+            else:
+                q = generation_num(2 ** s, 3)
+            print('Генерация двух чисел закончена')
+
+            pub_key, pri_key = rsa(p, q)
+            write_pub_key(pub_key)
+            write_pri_key(pub_key, pri_key)
+        except ValueError:
+            print('Введены не числа')
+
+    elif arg == 2:
+        try:
+            pub_key = load_open_key()
+            print('Сообщение: ', end='')
+            file = open(input(), 'r')
+            text = ''
+            for line in file:
+                text += line
+            file.close()
+            write_text(encryption(text, pub_key[0], pub_key[1]))
+            print('Сообщение зашифровано!!!')
+        except FileNotFoundError:
+            print('Нет такого файла')
+        except ValueError:
+            print('Файл не с открытым ключом')
+        except IndexError:
+            print('Файл не с открытым ключом')
+
+    elif arg == 3:
+        try:
+
+            print('Зашифрованное сообщение: ', end='')
+            file = open(input(), 'r')
+
+            text = []
+            for line in file:
+                text.append(line)
+            file.close()
+
+            if len(pri_key) == 0:
+                print('Необходим закрытый ключ')
+                pub_key, pri_key = load_close_key()
+
+            s = (decryption(text[3][52:], pub_key[0], pri_key[2]))
+
+            print('Файл расшифровался.\nИмя файла для расшифрованного сообщения: ', end='')
+            file = input()
+            if fileFound(file):
+                main()
+            else:
+                file = open(file, 'w')
+                file.write(s)
+                file.close()
+        except FileNotFoundError:
+            print('Нет такого файла, либо не введено название файла')
+        except ValueError:
+            print('Файл не с закрытым ключом')
+        except IndexError:
+            print('Файл не с закрытым ключом')
+
+    elif arg == 4:
+        return 0
+
+    print('\n')
+    main()
+
+
+main()
